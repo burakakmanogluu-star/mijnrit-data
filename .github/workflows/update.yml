@@ -1,0 +1,58 @@
+name: Update GVB data
+
+on:
+  schedule:
+    - cron: "17 2 * * *"   # every night ~03:17/04:17 Amsterdam
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build gvb.json from OVapi GTFS
+        run: |
+          mkdir -p public
+          python3 scripts/gvb_preprocess.py --download --days 14 --out public/gvb.json
+      - name: Sanity check + version file
+        run: |
+          python3 - <<'PY'
+          import json, hashlib, os, sys
+          p = "public/gvb.json"
+          d = json.load(open(p))
+          assert len(d["routes"]) > 30, "too few routes"
+          assert len(d["trips"]) > 10000, "too few trips"
+          assert len(d["sched"]) >= 7, "too few service days"
+          raw = open(p, "rb").read()
+          meta = {"version": d["version"], "generated": d["generated"], "validFrom": d["validFrom"],
+                  "validTo": d["validTo"], "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+          json.dump(meta, open("public/version.json", "w"))
+          print(meta)
+          PY
+          echo '<!doctype html><title>Mijn Rit data</title><p>Data file for the Mijn Rit app. Source: OVapi / GVB open data.</p>' > public/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
