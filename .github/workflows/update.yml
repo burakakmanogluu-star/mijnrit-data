@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "17 2 * * *"   # every night ~03:17/04:17 Amsterdam
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["app.json"]   # publish a new latestBuild right away
 
 permissions:
   contents: read
@@ -39,6 +42,9 @@ jobs:
           raw = open(p, "rb").read()
           meta = {"version": d["version"], "generated": d["generated"], "validFrom": d["validFrom"],
                   "validTo": d["validTo"], "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+          # Latest app build, for the in-app "new version available" banner (edit app.json after each release)
+          if os.path.exists("app.json"):
+              meta["app"] = json.load(open("app.json"))
           json.dump(meta, open("public/version.json", "w"))
           print(meta)
           PY
